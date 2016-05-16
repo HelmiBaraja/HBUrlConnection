@@ -1,9 +1,5 @@
-package HBURLConnection;
-
-
 import android.os.AsyncTask;
 import android.util.Log;
-import android.webkit.MimeTypeMap;
 
 import java.io.BufferedReader;
 import java.io.DataOutputStream;
@@ -14,12 +10,10 @@ import java.io.InputStreamReader;
 import java.io.StringWriter;
 import java.net.HttpURLConnection;
 import java.net.URL;
-import java.net.URLConnection;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.Set;
 
-import Controllers.ImageConverter.ImageConverter;
 
 public class HBUrlConnection {
 	private static final String TAG = "HBUrlConnection";
@@ -36,7 +30,7 @@ public class HBUrlConnection {
 	private String crlf = "\r\n";
 	private String twoHyphens = "--";
 	private String  boundary = Long.toHexString(System.currentTimeMillis()); // Just generate some unique random value.
-
+	private boolean isPostMethod;
 
 	public HBUrlConnection() {
 		listener = null;
@@ -44,6 +38,7 @@ public class HBUrlConnection {
 		allowUntrustedHttps = true;
 		task = null;
 		soapValue = null;
+		isPostMethod= false;
 	}
 
 	/*
@@ -73,17 +68,19 @@ public class HBUrlConnection {
 		send(url, convertToParams(map));
 	}
 
-	public void sendWithFile(String targetURL, String urlParameters, File file, String fileKey) {
-		this.file = file;
-		this.fileKey = fileKey;
-
-		//always send as async
-		syncrhonizeHttp=false;
-
-		send(targetURL, urlParameters);
+	public String sendGet(String targetURL)
+	{
+		isPostMethod = false;
+		return send(targetURL, null);
 	}
 
-	public String send(String targetURL, String urlParameters) {
+	public String sendPost(String targetURL, String urlParameters)
+	{
+		isPostMethod= true;
+		return send(targetURL, urlParameters);
+	}
+
+	private String send(String targetURL, String urlParameters) {
 
 		if (syncrhonizeHttp) {
 			Log.i(TAG, "syncrhonizeHttp: " + syncrhonizeHttp);
@@ -125,7 +122,7 @@ public class HBUrlConnection {
 
 			System.setProperty("javax.net.debug", "all");
 			connection = (HttpURLConnection) url.openConnection();
-			connection.setRequestMethod("POST");
+			connection.setRequestMethod(isPostMethod?"POST":"GET");
 
 			if (soapValue != null)
 				connection.setRequestProperty("SOAPAction", soapValue);
@@ -133,45 +130,41 @@ public class HBUrlConnection {
 
 			connection.setUseCaches(false);
 			connection.setDoInput(true);
-			connection.setDoOutput(true);
 
-			DataOutputStream wr=null;
+			if (isPostMethod) {
+				connection.setDoOutput(true);
 
-			//if need to send File.
-			if (this.file != null)
-			{
+				DataOutputStream wr = null;
 
-				connection.setRequestProperty("Connection", "Keep-Alive");
-				connection.setRequestProperty("Cache-Control", "no-cache");
-				connection.setRequestProperty(
-						"Content-Type", "multipart/form-data;boundary=" + boundary);
+				//if need to send File.
+				if (this.file != null) {
 
-				wr = new DataOutputStream(connection.getOutputStream());
+					connection.setRequestProperty("Connection", "Keep-Alive");
+					connection.setRequestProperty("Cache-Control", "no-cache");
+					connection.setRequestProperty(
+							"Content-Type", "multipart/form-data;boundary=" + boundary);
 
-				String [] keyValue = urlParameters.split("&");
-				for (int i =0 ; i< keyValue.length;i++)
-				{
-					String key = keyValue[i].split("=")[0];
-					String value = keyValue[i].split("=")[1];
+					wr = new DataOutputStream(connection.getOutputStream());
 
-					this.addFormField(wr,key,value);
+					String[] keyValue = urlParameters.split("&");
+					for (int i = 0; i < keyValue.length; i++) {
+						String key = keyValue[i].split("=")[0];
+						String value = keyValue[i].split("=")[1];
+
+						this.addFormField(wr, key, value);
+					}
+
+				} else {
+
+					wr = new DataOutputStream(connection.getOutputStream());
+					wr.writeBytes(urlParameters);
 				}
 
-				this.addFileField(wr, this.file, fileKey);
+				// Send request
 
-
+				wr.flush();
+				wr.close();
 			}
-			else{
-
-				wr = new DataOutputStream(connection.getOutputStream());
-				wr.writeBytes(urlParameters);
-			}
-
-			// Send request
-
-			wr.flush();
-			wr.close();
-
 
 			// Get Response
 			InputStream is;
@@ -217,19 +210,6 @@ public class HBUrlConnection {
 		wr.flush();
 		Log.d("tag","added "+key+"="+value);
 
-	}
-
-	private void addFileField(DataOutputStream wr, File file, String key) throws IOException {
-
-		wr.writeBytes(twoHyphens + boundary + crlf);
-		wr.writeBytes("Content-Disposition: form-data; name=\"" + key + "\";filename=\"" + this.file.getName() + "\""+crlf);
-
-		wr.writeBytes(crlf);
-		wr.write(ImageConverter.getInstance().getImageToByte(file.getAbsolutePath()));
-		wr.writeBytes(crlf);
-		wr.flush();
-		wr.writeBytes(twoHyphens + boundary +twoHyphens + crlf);
-		wr.flush();
 	}
 
 	/* to cancel / stop / abort existing connection */
